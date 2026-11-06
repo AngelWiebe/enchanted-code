@@ -7,10 +7,92 @@ function focusable(node) {
     .filter((element) => element.getAttribute('aria-hidden') !== 'true' && element.getClientRects().length > 0)
 }
 
+let scrollLocks = 0
+let lockedScrollY = 0
+let savedScrollStyles = null
+
+function lockPageScroll() {
+  const root = document.documentElement
+  const { body } = document
+  if (scrollLocks === 0) {
+    lockedScrollY = window.scrollY
+    const gutter = Math.max(0, window.innerWidth - root.clientWidth)
+    savedScrollStyles = {
+      overflow: root.style.overflow,
+      scrollBehavior: root.style.scrollBehavior,
+      bodyOverflow: body.style.overflow,
+      bodyPosition: body.style.position,
+      bodyTop: body.style.top,
+      bodyLeft: body.style.left,
+      bodyRight: body.style.right,
+      bodyWidth: body.style.width,
+    }
+    root.style.setProperty('--scroll-lock-gutter', `${gutter}px`)
+    root.classList.add('is-scroll-locked')
+    root.style.overflow = 'hidden'
+    body.style.overflow = 'hidden'
+    body.style.position = 'fixed'
+    body.style.top = `-${lockedScrollY}px`
+    body.style.left = '0'
+    body.style.right = '0'
+    body.style.width = '100%'
+  }
+  scrollLocks += 1
+  return () => {
+    scrollLocks = Math.max(0, scrollLocks - 1)
+    if (scrollLocks > 0 || !savedScrollStyles) return
+    const previous = savedScrollStyles
+    savedScrollStyles = null
+    root.classList.remove('is-scroll-locked')
+    root.style.removeProperty('--scroll-lock-gutter')
+    root.style.overflow = previous.overflow
+    body.style.overflow = previous.bodyOverflow
+    body.style.position = previous.bodyPosition
+    body.style.top = previous.bodyTop
+    body.style.left = previous.bodyLeft
+    body.style.right = previous.bodyRight
+    body.style.width = previous.bodyWidth
+    root.style.scrollBehavior = 'auto'
+    window.scrollTo(0, lockedScrollY)
+    root.style.scrollBehavior = previous.scrollBehavior
+  }
+}
+
+function syncVisualViewport() {
+  const viewport = window.visualViewport
+  if (!viewport) return
+  const root = document.documentElement
+  root.style.setProperty('--vv-top', `${viewport.offsetTop}px`)
+  root.style.setProperty('--vv-height', `${viewport.height}px`)
+}
+
+let viewportLocks = 0
+
+function bindVisualViewport() {
+  const viewport = window.visualViewport
+  if (viewportLocks === 0) {
+    syncVisualViewport()
+    viewport?.addEventListener('resize', syncVisualViewport)
+    viewport?.addEventListener('scroll', syncVisualViewport)
+  }
+  viewportLocks += 1
+  return () => {
+    viewportLocks = Math.max(0, viewportLocks - 1)
+    if (viewportLocks > 0) return
+    viewport?.removeEventListener('resize', syncVisualViewport)
+    viewport?.removeEventListener('scroll', syncVisualViewport)
+    const root = document.documentElement
+    root.style.removeProperty('--vv-top')
+    root.style.removeProperty('--vv-height')
+  }
+}
+
 function useModal(onClose, restoreRef) {
   const dialogRef = useRef(null)
 
   useEffect(() => {
+    const unlockScroll = lockPageScroll()
+    const unbindViewport = bindVisualViewport()
     const previouslyFocused = restoreRef?.current instanceof HTMLElement
       ? restoreRef.current
       : document.activeElement
@@ -48,11 +130,10 @@ function useModal(onClose, restoreRef) {
     }
 
     document.addEventListener('keydown', onKey)
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
     return () => {
       document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = previousOverflow
+      unbindViewport()
+      unlockScroll()
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus()
     }
   }, [onClose, restoreRef])

@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import logo from '../assets/logo.png'
 
+function pageScroll() {
+  const { body } = document
+  if (body.style.position === 'fixed') {
+    const top = Number.parseInt(body.style.top, 10)
+    return Number.isNaN(top) ? 0 : Math.abs(top)
+  }
+  return window.scrollY
+}
+
 const links = [
   { id: 'top', label: 'Home' },
   { id: 'services', label: 'Services' },
@@ -20,11 +29,12 @@ export default function Header({ onNavigate, onContact, inert }) {
     const ids = ['top', 'services', 'about', 'work']
 
     const update = () => {
-      setSolid(window.scrollY > 24)
+      const scrollY = pageScroll()
+      setSolid(scrollY > 24)
 
       if (pinned.current) {
         const settled = pinned.current === 'top'
-          ? window.scrollY < 4
+          ? scrollY < 4
           : Math.abs((document.getElementById(pinned.current)?.getBoundingClientRect().top ?? 0) - 88) < 48
         if (!settled) {
           setActive(pinned.current)
@@ -33,12 +43,12 @@ export default function Header({ onNavigate, onContact, inert }) {
         pinned.current = null
       }
 
-      const line = window.scrollY + 160
+      const line = scrollY + 160
       let current = 'top'
       for (const id of ids) {
         const section = document.getElementById(id)
         if (!section) continue
-        const top = section.getBoundingClientRect().top + window.scrollY
+        const top = section.getBoundingClientRect().top + scrollY
         if (top <= line) current = id
       }
       setActive(current)
